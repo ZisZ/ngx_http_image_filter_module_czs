@@ -37,6 +37,7 @@ Example Configuration
 
 
 Syntax:
+
        image_filter zoom percent;
        image_filter crop width height strategy;
        image_filter stretch width height;
@@ -60,7 +61,7 @@ Syntax:
 
 这几个patch是从nginx 1.2.9中生成出来的，但因为ngx_http_image_filter_module在版本变化过程中仅有少量修改，所以它们也可以成功打到1.12.2上；
 
-标准的ngx_http_image_filter_module用法可以从http://nginx.org/en/docs/http/ngx_http_image_filter_module.html找到；
+标准的ngx_http_image_filter_module用法可以从 http://nginx.org/en/docs/http/ngx_http_image_filter_module.html 找到；
 
 补充的用法如下：
 
@@ -84,6 +85,7 @@ Syntax:
 
 
 语法:
+
        image_filter zoom percent;
        image_filter crop width height strategy;
        image_filter stretch width height;
