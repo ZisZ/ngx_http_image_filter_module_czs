@@ -1,0 +1,192 @@
+diff -Nur nginx-1.2.9.bak/src/http/modules/ngx_http_image_filter_module.c nginx-1.2.9/src/http/modules/ngx_http_image_filter_module.c
+--- nginx-1.2.9.bak/src/http/modules/ngx_http_image_filter_module.c	2016-04-07 17:37:28.023998800 +0800
++++ nginx-1.2.9/src/http/modules/ngx_http_image_filter_module.c	2016-04-08 13:51:41.304000141 +0800
+@@ -48,6 +48,7 @@
+     ngx_uint_t                   height;
+     ngx_uint_t                   angle;
+     ngx_uint_t                   crop;
++    ngx_uint_t                   zoom;
+     ngx_uint_t                   jpeg_quality;
+     ngx_uint_t                   sharpen;
+ 
+@@ -57,6 +58,7 @@
+     ngx_http_complex_value_t    *hcv;
+     ngx_http_complex_value_t    *acv;
+     ngx_http_complex_value_t    *ccv;
++    ngx_http_complex_value_t    *zcv;
+     ngx_http_complex_value_t    *jqcv;
+     ngx_http_complex_value_t    *shcv;
+ 
+@@ -76,6 +78,7 @@
+     ngx_uint_t                   max_height;
+     ngx_uint_t                   angle;
+     ngx_uint_t                   crop;
++    ngx_uint_t                   zoom;
+ 
+     ngx_uint_t                   phase;
+     ngx_uint_t                   type;
+@@ -543,6 +546,11 @@
+     }
+ 
+     ctx->crop = ngx_http_image_filter_get_value(r, conf->ccv, conf->crop);
++    ctx->zoom = ngx_http_image_filter_get_value(r, conf->zcv, conf->zoom);
++
++    if (ctx->zoom > 100) {  /* only support zoom in now */
++        return NULL;
++    }
+ 
+     if (rc == NGX_OK
+         && ctx->width <= ctx->max_width
+@@ -770,7 +778,7 @@
+     gdImagePtr                     src, dst;
+     ngx_pool_cleanup_t            *cln;
+     ngx_http_image_filter_conf_t  *conf;
+-    int                            max_width, max_height, crop;
++    int                            max_width, max_height, crop, zoom;
+ 
+     src = ngx_http_image_source(r, ctx);
+ 
+@@ -822,6 +830,50 @@
+     crop = ctx->crop;
+     max_width = ctx->max_width;
+     max_height = ctx->max_height;
++    zoom = ctx->zoom;
++
++    if (zoom > 0) {
++        int zx, zy;
++        zx = dx;
++        zy = dy;
++        zx = zx * zoom / 100;
++        zy = zy * zoom / 100;
++
++        zx = zx ? zx : 1;
++        zy = zy ? zy : 1;
++
++        ox = dx - zx;
++        oy = dy - zy;
++
++        dst = ngx_http_image_new(r, zx, zy, colors);
++
++        if (dst == NULL) {
++            gdImageDestroy(src);
++            return NULL;
++        }
++
++        ox /= 2;
++        oy /= 2;
++
++        if (colors == 0) {
++            gdImageSaveAlpha(dst, 1);
++            gdImageAlphaBlending(dst, 0);
++        }
++
++        gdImageCopy(dst, src, 0, 0, ox, oy, dx - ox, dy - oy);
++
++        if (colors) {
++            gdImageTrueColorToPalette(dst, 1, 256);
++        }
++
++        gdImageDestroy(src);
++
++        src = dst;
++        sx = zx;
++        sy = zy;
++        dx = sx;
++        dy = sy;
++    }
+ 
+     if (conf->filter == NGX_HTTP_IMAGE_RESIZE) {
+ 
+@@ -843,8 +899,8 @@
+ 
+         resize = 0;
+ 
+-    } else { /* NGX_HTTP_IMAGE_CROP */
++    } else if (crop > 0) { /* NGX_HTTP_IMAGE_CROP */
+
+         resize = 0;
+ 
+         if (crop == NGX_HTTP_IMAGE_CROP_STRATEGY_CENTER) {
+@@ -908,7 +964,9 @@
+                     max_height = max_height * ratioy;
+                 }
+             }
+-        }  /* else no crop */
++        } else {
++            return NULL;
++        }
+     }
+ 
+     if (resize) {
+@@ -981,7 +1039,7 @@
+         }
+     }
+ 
+-    if (conf->filter == NGX_HTTP_IMAGE_CROP) {
++    if (crop > 0) {
+ 
+         src = dst;
+ 
+@@ -1296,10 +1354,12 @@
+      *     conf->height = 0;
+      *     conf->angle = 0;
+      *     conf->crop = 0;
++     *     conf->zoom = 0;
+      *     conf->wcv = NULL;
+      *     conf->hcv = NULL;
+      *     conf->acv = NULL;
+      *     conf->ccv = NULL;
++     *     conf->zcv = NULL;
+      *     conf->jqcv = NULL;
+      *     conf->shcv = NULL;
+      */
+@@ -1331,10 +1391,12 @@
+             conf->height = prev->height;
+             conf->angle = prev->angle;
+             conf->crop = prev->crop;
++            conf->zoom = prev->zoom;
+             conf->wcv = prev->wcv;
+             conf->hcv = prev->hcv;
+             conf->acv = prev->acv;
+             conf->ccv = prev->ccv;
++            conf->zcv = prev->zcv;
+         }
+     }
+ 
+@@ -1398,7 +1460,35 @@
+ 
+     } else if (cf->args->nelts == 3) {
+ 
+-        if (ngx_strcmp(value[i].data, "rotate") == 0) {
++        if (ngx_strcmp(value[i].data, "zoom") == 0) {
++            ngx_memzero(&ccv, sizeof(ngx_http_compile_complex_value_t));
++
++            ccv.cf = cf;
++            ccv.value = &value[++i];
++            ccv.complex_value = &cv;
++
++            if (ngx_http_compile_complex_value(&ccv) != NGX_OK) {
++                return NGX_CONF_ERROR;
++            }
++
++            if (cv.lengths == NULL) {
++                n = ngx_http_image_filter_value(&value[i]);
++
++                imcf->zoom = (ngx_uint_t) n;
++
++            } else {
++                imcf->zcv = ngx_palloc(cf->pool,
++                                       sizeof(ngx_http_complex_value_t));
++                if (imcf->zcv == NULL) {
++                    return NGX_CONF_ERROR;
++                }
++
++                *imcf->zcv = cv;
++            }
++
++            return NGX_CONF_OK;
++
++        } else if (ngx_strcmp(value[i].data, "rotate") == 0) {
+             if (imcf->filter != NGX_HTTP_IMAGE_RESIZE
+                 && imcf->filter != NGX_HTTP_IMAGE_CROP)
+             {

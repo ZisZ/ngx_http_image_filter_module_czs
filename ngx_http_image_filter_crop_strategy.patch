@@ -1,0 +1,325 @@
+diff -Nur nginx-1.2.9.bak/src/http/modules/ngx_http_image_filter_module.c nginx-1.2.9/src/http/modules/ngx_http_image_filter_module.c
+--- nginx-1.2.9.bak/src/http/modules/ngx_http_image_filter_module.c	2013-05-13 18:43:28.000000000 +0800
++++ nginx-1.2.9/src/http/modules/ngx_http_image_filter_module.c	2018-01-05 10:54:05.939857942 +0800
+@@ -19,6 +19,11 @@
+ #define NGX_HTTP_IMAGE_CROP      4
+ #define NGX_HTTP_IMAGE_ROTATE    5
+ 
++/* crop strategies */
++#define NGX_HTTP_IMAGE_CROP_STRATEGY_CENTER      1 
++#define NGX_HTTP_IMAGE_CROP_STRATEGY_TOP         2 
++#define NGX_HTTP_IMAGE_CROP_STRATEGY_SMART       3 
++#define NGX_HTTP_IMAGE_CROP_STRATEGY_SMARTRAW    4 
+ 
+ #define NGX_HTTP_IMAGE_START     0
+ #define NGX_HTTP_IMAGE_READ      1
+@@ -41,6 +46,7 @@
+     ngx_uint_t                   width;
+     ngx_uint_t                   height;
+     ngx_uint_t                   angle;
++    ngx_uint_t                   crop;
+     ngx_uint_t                   jpeg_quality;
+     ngx_uint_t                   sharpen;
+ 
+@@ -49,6 +55,7 @@
+     ngx_http_complex_value_t    *wcv;
+     ngx_http_complex_value_t    *hcv;
+     ngx_http_complex_value_t    *acv;
++    ngx_http_complex_value_t    *ccv;
+     ngx_http_complex_value_t    *jqcv;
+     ngx_http_complex_value_t    *shcv;
+ 
+@@ -67,6 +74,7 @@
+     ngx_uint_t                   max_width;
+     ngx_uint_t                   max_height;
+     ngx_uint_t                   angle;
++    ngx_uint_t                   crop;
+ 
+     ngx_uint_t                   phase;
+     ngx_uint_t                   type;
+@@ -116,7 +124,7 @@
+ static ngx_command_t  ngx_http_image_filter_commands[] = {
+ 
+     { ngx_string("image_filter"),
+-      NGX_HTTP_LOC_CONF|NGX_CONF_TAKE123,
++      NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1234,
+       ngx_http_image_filter,
+       NGX_HTTP_LOC_CONF_OFFSET,
+       0,
+@@ -529,6 +537,8 @@
+         return NULL;
+     }
+ 
++    ctx->crop = ngx_http_image_filter_get_value(r, conf->ccv, conf->crop);
++
+     if (rc == NGX_OK
+         && ctx->width <= ctx->max_width
+         && ctx->height <= ctx->max_height
+@@ -744,6 +754,7 @@
+     gdImagePtr                     src, dst;
+     ngx_pool_cleanup_t            *cln;
+     ngx_http_image_filter_conf_t  *conf;
++    int                            max_width, max_height, crop;
+ 
+     src = ngx_http_image_source(r, ctx);
+ 
+@@ -792,6 +803,9 @@
+ 
+     dx = sx;
+     dy = sy;
++    crop = ctx->crop;
++    max_width = ctx->max_width;
++    max_height = ctx->max_height;
+ 
+     if (conf->filter == NGX_HTTP_IMAGE_RESIZE) {
+ 
+@@ -817,22 +831,69 @@
+ 
+         resize = 0;
+ 
+-        if ((double) dx / dy < (double) ctx->max_width / ctx->max_height) {
+-            if ((ngx_uint_t) dx > ctx->max_width) {
+-                dy = dy * ctx->max_width / dx;
++        if (crop == NGX_HTTP_IMAGE_CROP_STRATEGY_CENTER) {
++
++            if ((double) dx / dy < (double) max_width / max_height) {
++                if ((ngx_uint_t) dx > max_width) {
++                    dy = dy * max_width / dx;
++                    dy = dy ? dy : 1;
++                    dx = max_width;
++                    resize = 1;
++                }
++
++            } else {
++                if ((ngx_uint_t) dy > max_height) {
++                    dx = dx * max_height / dy;
++                    dx = dx ? dx : 1;
++                    dy = max_height;
++                    resize = 1;
++                }
++            }
++        } else if (crop == NGX_HTTP_IMAGE_CROP_STRATEGY_TOP) {
++
++            if ((ngx_uint_t) dx > max_width) {
++                dy = dy * max_width / dx;
+                 dy = dy ? dy : 1;
+-                dx = ctx->max_width;
++                dx = max_width;
+                 resize = 1;
+             }
+ 
+-        } else {
+-            if ((ngx_uint_t) dy > ctx->max_height) {
+-                dx = dx * ctx->max_height / dy;
+-                dx = dx ? dx : 1;
+-                dy = ctx->max_height;
+-                resize = 1;
++        } else if (crop == NGX_HTTP_IMAGE_CROP_STRATEGY_SMART) {
++
++            if ((double) dx / dy < (double) max_width / max_height) {
++                if ((ngx_uint_t) dx > max_width) {
++                    dy = dy * max_width / dx;
++                    dy = dy ? dy : 1;
++                    dx = max_width;
++                    resize = 1;
++                }
++
++            } else {
++                if ((ngx_uint_t) dy > max_height) {
++                    dx = dx * max_height / dy;
++                    dx = dx ? dx : 1;
++                    dy = max_height;
++                    resize = 1;
++                }
+             }
+-        }
++
++        } else if (crop == NGX_HTTP_IMAGE_CROP_STRATEGY_SMARTRAW) {
++
++            if ((double) dx / dy < (double) max_width / max_height) {
++                if ((ngx_uint_t) dx > max_width) {
++                    double ratiox = (double) dx / max_width;
++                    max_width = max_width * ratiox;
++                    max_height = max_height * ratiox;
++                }
++
++            } else {
++                if ((ngx_uint_t) dy > max_height) {
++                    double ratioy = (double) dy / max_height;
++                    max_width = max_width * ratioy;
++                    max_height = max_height * ratioy;
++                }
++            }
++        }  /* else no crop */
+     }
+ 
+     if (resize) {
+@@ -909,49 +970,83 @@
+ 
+         src = dst;
+ 
+-        if ((ngx_uint_t) dx > ctx->max_width) {
+-            ox = dx - ctx->max_width;
++        double aspect_ratio = (double) dx / dy;
++
++        if ((ngx_uint_t) dx > max_width) {
++            ox = dx - max_width;
+ 
+         } else {
+             ox = 0;
+         }
+ 
+-        if ((ngx_uint_t) dy > ctx->max_height) {
+-            oy = dy - ctx->max_height;
++        if ((ngx_uint_t) dy > max_height) {
++            oy = dy - max_height;
+ 
+         } else {
+             oy = 0;
+         }
+ 
++        dst = ngx_http_image_new(r, dx - ox, dy - oy, colors);
++
++        if (dst == NULL) {
++            gdImageDestroy(src);
++            return NULL;
++        }
++
+         if (ox || oy) {
+ 
+-            dst = ngx_http_image_new(r, dx - ox, dy - oy, colors);
++            if (crop == NGX_HTTP_IMAGE_CROP_STRATEGY_CENTER) {
+ 
+-            if (dst == NULL) {
+-                gdImageDestroy(src);
+-                return NULL;
++
++                ox /= 2;
++                oy /= 2;
+             }
+ 
+-            ox /= 2;
+-            oy /= 2;
++            if (crop == NGX_HTTP_IMAGE_CROP_STRATEGY_TOP) {
+ 
+-            ngx_log_debug4(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
+-                           "image crop: %d x %d @ %d x %d",
+-                           dx, dy, ox, oy);
+-
+-            if (colors == 0) {
+-                gdImageSaveAlpha(dst, 1);
+-                gdImageAlphaBlending(dst, 0);
++                ox /= 2;
++                oy = 0;
+             }
+ 
+-            gdImageCopy(dst, src, 0, 0, ox, oy, dx - ox, dy - oy);
++            if (crop == NGX_HTTP_IMAGE_CROP_STRATEGY_SMART ||
++                    crop == NGX_HTTP_IMAGE_CROP_STRATEGY_SMARTRAW) {
+ 
+-            if (colors) {
+-                gdImageTrueColorToPalette(dst, 1, 256);
++                if (aspect_ratio >= 3) {
++                    /* left head */
++                    ox = 0;
++                    oy /= 2;
++                } else if (aspect_ratio >= 1) {
++                    /* center */
++                    ox /= 2;
++                    oy /= 2;
++                } else if (aspect_ratio >= 0.7) {
++                    /* top quarter */
++                    ox /= 2;
++                    oy /= 4;
++                } else {
++                    /* top head */
++                    ox /= 2;
++                    oy = 0;
++                }
+             }
++        }
+ 
+-            gdImageDestroy(src);
++        ngx_log_debug4(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
++                       "image crop: %d x %d @ %d x %d",
++                       dx, dy, ox, oy);
++
++        if (colors == 0) {
++            gdImageSaveAlpha(dst, 1);
++            gdImageAlphaBlending(dst, 0);
++        }
++
++        gdImageCopy(dst, src, 0, 0, ox, oy, dx - ox, dy - oy);
++
++        if (colors) {
++            gdImageTrueColorToPalette(dst, 1, 256);
+         }
++
++        gdImageDestroy(src);
+     }
+ 
+     if (transparent != -1 && colors) {
+@@ -1175,9 +1270,11 @@
+      *     conf->width = 0;
+      *     conf->height = 0;
+      *     conf->angle = 0;
++     *     conf->crop = 0;
+      *     conf->wcv = NULL;
+      *     conf->hcv = NULL;
+      *     conf->acv = NULL;
++     *     conf->ccv = NULL;
+      *     conf->jqcv = NULL;
+      *     conf->shcv = NULL;
+      */
+@@ -1208,9 +1305,11 @@
+             conf->width = prev->width;
+             conf->height = prev->height;
+             conf->angle = prev->angle;
++            conf->crop = prev->crop;
+             conf->wcv = prev->wcv;
+             conf->hcv = prev->hcv;
+             conf->acv = prev->acv;
++            conf->ccv = prev->ccv;
+         }
+     }
+ 
+@@ -1383,6 +1482,39 @@
+         *imcf->hcv = cv;
+     }
+ 
++    if (imcf->filter == NGX_HTTP_IMAGE_RESIZE) {
++        return NGX_CONF_OK;
++    }
++
++    /* following args are for NGX_HTTP_IMAGE_CROP */
++    ngx_memzero(&ccv, sizeof(ngx_http_compile_complex_value_t));
++
++    ccv.cf = cf;
++    ccv.value = &value[++i];
++    ccv.complex_value = &cv;
++
++    if (ngx_http_compile_complex_value(&ccv) != NGX_OK) {
++        return NGX_CONF_ERROR;
++    }
++
++    if (cv.lengths == NULL) {
++        n = ngx_http_image_filter_value(&value[i]);
++
++        if (n == 0) {
++            goto failed;
++        }
++
++        imcf->crop = (ngx_uint_t) n;
++
++    } else {
++        imcf->ccv = ngx_palloc(cf->pool, sizeof(ngx_http_complex_value_t));
++        if (imcf->ccv == NULL) {
++            return NGX_CONF_ERROR;
++        }
++
++        *imcf->ccv = cv;
++    }
++
+     return NGX_CONF_OK;
+ 
+ failed:
