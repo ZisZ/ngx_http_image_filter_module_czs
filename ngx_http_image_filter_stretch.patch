@@ -80,7 +80,7 @@
 +            dx = max_width;
 +
 +
-+    } else if (crop > NGX_HTTP_IMAGE_CROP_STRATEGY_NONE) { /* NGX_HTTP_IMAGE_CROP */
++    } else { /* NGX_HTTP_IMAGE_CROP */
 
          resize = 0;
  
