@@ -41,8 +41,8 @@ diff -Nur nginx-1.2.9.bak/src/http/modules/ngx_http_image_filter_module.c nginx-
      gdImagePtr                     src, dst;
      ngx_pool_cleanup_t            *cln;
      ngx_http_image_filter_conf_t  *conf;
--    int                            max_width, max_height, crop;
-+    int                            max_width, max_height, crop, zoom;
+-    ngx_uint_t                     max_width, max_height, crop;
++    ngx_uint_t                     max_width, max_height, crop, zoom;
  
      src = ngx_http_image_source(r, ctx);
  
