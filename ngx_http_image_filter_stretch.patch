@@ -59,7 +59,7 @@
 +            if ((ngx_uint_t) dx > max_width) {
 +                dy = dy * max_width / dx;
 +                dy = dy ? dy : 1;
-+                if (dy > max_height)
++                if ((ngx_uint_t) dy > max_height)
 +                    dy = max_height;
 +                dx = max_width;
 +            }
@@ -68,7 +68,7 @@
 +            if ((ngx_uint_t) dy > max_height) {
 +                dx = dx * max_height / dy;
 +                dx = dx ? dx : 1;
-+                if (dx > max_width)
++                if ((ngx_uint_t) dx > max_width)
 +                    dx = max_width;
 +                dy = max_height;
 +            }
