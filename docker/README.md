@@ -6,6 +6,7 @@
         docker run -d -p:8080:80 nginx_http_image_filter:czs /usr/local/nginx/sbin/nginx -g "daemon off;"
 
 #Result
+
 ##origin nginx login with size 352x72
 
 ![image](http://nginx.org/nginx.png)
