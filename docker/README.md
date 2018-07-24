@@ -25,7 +25,7 @@
 
 ##crop to 64x64 with c4, result has size 72x72 and the same resolution with origin image
 
-![image](https://github.com/ZisZ/ngx_http_image_filter_module_czs/blob/master/docker/pic/nginx_64x64-c3.png)
+![image](https://github.com/ZisZ/ngx_http_image_filter_module_czs/blob/master/docker/pic/nginx_64x64-c4.png)
 
 ##zoom 100 to 128x128 with stretch
 
